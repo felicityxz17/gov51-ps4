@@ -4,23 +4,194 @@ format: pdf
 editor: visual
 ---
 
-## Quarto
+<https://github.com/felicityxz17/gov51-ps4>
 
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+## 1 Setup and Exploration
 
-## Running Code
-
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+### 1.1
 
 ```{r}
-1 + 1
+library(tidyverse)
+library(estimatr)
+library(modelsummary)
+card <- read_csv("data/card1995.csv")
 ```
 
-You can add options to executable code like this
+### 1.2
 
 ```{r}
-#| echo: false
-2 * 2
+dim(card)
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
+The dataset contains 3010 observations. The unit of observation is individuals with varying levels of education.
+
+### 1.3
+
+```{r}
+ggplot(card, aes(x = educ)) + 
+  geom_histogram(breaks = seq(1, 18, by = 1), color = "black", fill = "white") +
+  labs(title = "Histogram of Years of Completed Education",
+       x = "Education (Years)",
+       y = "Count")
+
+mean(card$educ)
+```
+
+The mean of `educ` is 13.26346 years. The histogram depicts a spike at around 12 years, which is consistent with dropouts occurring at the end of high school after completing primary and secondary school. There is a similar spike at around 16 years, similarly reflecting the substantial portion of people who end their educational progression after completing a bachelor's (4 years of college).
+
+### 1.4
+
+```{r}
+plot(lwage ~ educ, data = card)
+abline(lm(lwage ~ educ, data = card), col = "red")
+```
+
+The linear regression line has a clearly positive slope, suggesting that education does appear to be associated with higher wages.
+
+### 1.5
+
+People with education might earn more even if education had no effect:
+
+1.  People with more years of schooling are likely already living in relatively socioeconomically well-off areas that provide them with the resources and opportunities to achieve greater success in the future (e.g., those who can afford to attend college have more baseline resources than those who cannot).
+2.  People with more years of schooling may exhibit particular character traits (e.g., work ethic, persistence) and/or a somewhat higher level of innate abilities/intelligence that simultaneously make them more likely to succeed in the workforce.
+
+Thus, underlying socioeconomic conditions and personal traits are confounding variables in the relationship between education and wages.
+
+## 2 The Instrument: College Proximity
+
+### 2.1
+
+```{r}
+mean(card$nearc4)
+```
+
+Since `nearc4` is a binary variable, the mean of the variable equals the proportion of respondents who grew up near a 4-year college: 68.20598%.
+
+### 2.2
+
+```{r}
+first_stage <- lm_robust(educ ~ nearc4 + black + smsa + south + exper + expersq + married, data = card, se_type = "HC2")
+summary(first_stage)
+```
+
+The coefficient on `nearc4` is 0.32711, with a standard error of 0.08554 and t-statistic of 4.0607. This coefficient indicates that if race, living in a metropolitan area, living in the South, labor market experience, experience squared, and marriage are held constant, individuals who grew up near a 4-year college have on average 0.32711 more years of schooling than individuals who did not grow up near a 4-year college, and this relationship is statistically significant given the p-value of 5.017e-05. The sign makes senses because growing up near a 4-year college is reasonably expected to be associated with more individuals attending that college due to ease of access, geographic preference in acceptances, etc.
+
+### 2.3
+
+The t-statistic of `nearc4` is 4.0607, so the first-stage F-statistic is 16.48928. Since this F-statistic is greater than 10, the instrument is strong, which is necessary for 2SLS estimate reliability because it ensures that the 2SLS model bias is limited to less than 10% of that of the OLS model so that 2SLS is actually a meaningful improvement in unbiased estimation.
+
+### 2.4
+
+\(a\) The exclusion restriction requires that the relationship between `nearc4` and `lwage` must be 0 once we control for education, such that the only effect of `nearc4` on `lwage` is *through* education.
+
+\(b\) Growing up near a college might affect wages for reasons other than more education because proximity to a college is also related to factors such as increased property prices/valuations, which mean that individuals who can afford to live in the area are likely also higher earners.
+
+### 2.5
+
+```{r}
+nearc4_0 <- card %>% filter(nearc4 == 0)
+nearc4_1 <- card %>% filter(nearc4 == 1)
+mean(nearc4_0$black)
+mean(nearc4_0$smsa)
+mean(nearc4_0$south)
+mean(nearc4_1$black)
+mean(nearc4_1$smsa)
+mean(nearc4_1$south)
+```
+
+The means for `black` are 0.2800418 and 0.211885 for respondents who did not and did grow up near a college, respectively. For `smsa`, the means are 0.4785789 and 0.8222114, and for `south`, the means are 0.5632184 and 0.3292742.
+
+Although the groups appear to be relatively balanced in terms of racial makeup, they do not appear to be balanced in terms of having lived in metropolitan areas or in the South, suggesting that there may still be confounding variables in the relationship between `nearc4` and `education`, and thus the instrument violates the independence assumption and may not reliably remove exogenous variation.
+
+## 3 The Wald Estimator
+
+### 3.1
+
+```{r}
+reduced_form <- lm_robust(lwage ~ nearc4 + black + smsa + south + exper + expersq + married, data = card, se_type = "HC2")
+summary(reduced_form)
+```
+
+The coefficient on `nearc4` is 0.040854. This coefficient indicates that if race, living in a metropolitan area, living in the South, labor market experience, experience squared, and marriage are held constant, individuals who grew up near a 4-year college have on average a 4.0854% higher weekly wage than individuals who did not grow up near a 4-year college, and this relationship is statistically significant given the p-value of 1.121e-02.
+
+### 3.2
+
+0.040854/0.32711 = 0.1248938.
+
+### 3.3
+
+The Wald estimate indicates that each additional year of education increases weekly wage by 1.248938%.
+
+## 4 OLS vs. 2SLS
+
+### 4.1
+
+```{r}
+ols <- lm_robust(lwage ~ educ + black + smsa + south + exper + expersq + married,
+data = card, se_type = "HC2")
+summary(ols)
+```
+
+The coefficient on `educ` is 0.071498, which indicates that if race, living in a metropolitan area, living in the South, labor market experience, experience squared, and marriage are held constant, every additional year of education increases weekly wage by 7.1498%, and this relationship is statistically significant given the p-value of 4.317e-82.
+
+### 4.2
+
+```{r}
+iv <- iv_robust(lwage ~ educ + black + smsa + south + exper + expersq + married | nearc4 + black + smsa + south + exper + expersq + married, data = card, se_type = "HC2")
+summary(iv)
+```
+
+The coefficient on `educ` is 0.124893, which matches the Wald estimate.
+
+### 4.3
+
+```{r}
+modelsummary(list("OLS" = ols, "2SLS" = iv),
+coef_map = c("educ" = "Years of Education"),
+gof_map = c("nobs", "r.squared"))
+```
+
+### 4.4
+
+\(a\) 2SLS is larger than OLS.
+
+\(b\) OLS could underestimate the return to education because it is not limited to the compliers, i.e., those who only went to college because they lived near one, who would likely see greater returns to education as estimated by 2SLS compared to the returns for the overall population as estimated by OLS. Additionally, the OLS coefficient is shrunk toward 0 because of random measurement error and attenuation bias.
+
+\(c\) The 2SLS estimate is more credible as a *causal* estimate of the effect of education on wages because the OLS model contains confounding variables between education and wages and is correlated with the error term, so the causal effect of education on wages can only be deduced by the instrumental variable that minimizes bias via 2SLS.
+
+### 4.5
+
+\(a\)
+
+```{r}
+ols_iq <- lm_robust(lwage ~ educ + IQ + black + smsa + south + exper + expersq + married,
+data = card, se_type = "HC2")
+summary(ols_iq)
+```
+
+The OLS coefficient on `educ` when including IQ is 0.06757, which is very slightly lower than the coefficient estimate of 0.071498 without including IQ.
+
+\(b\)
+
+```{r}
+iv_iq <- iv_robust(lwage ~ educ + IQ + black + smsa + south + exper + expersq + married | nearc4 + IQ + black + smsa + south + exper + expersq + married, data = card, se_type = "HC2")
+summary(iv_iq)
+```
+
+The 2SLS estimate for `educ` when including IQ is 0.1093899, which is slightly lower than the coefficient estimate of 0.124893 without including IQ.
+
+\(c\) The original gap between the OLS and 2SLS coefficient is 0.053395 compared to a new gap of 0.0418199, which is not a significant change and therefore suggests that the discrepancy between OLS and IV is not primarily attributable to IQ as a source of bias. Otherwise, if there had been a significant change in the 2SLS estimate when including IQ compared to the change in the OLS estimate when including IQ, then there would be evidence that IQ was correlated with the systematic error present in the original OLS model.
+
+## 5 Interpretation and LATE
+
+### 5.1
+
+The compliers are the individuals who were in socioeconomic conditions such that they would not have attended college if it had not been nearby (and only attended because it was nearby), which would likely include lower-income and/or first-generation students.
+
+### 5.2
+
+For individuals for whom the controlling factor in their decision to attend college was proximity, the local average treatment effect of an additional year of education is a 12.4893% increase in weekly wages.
+
+### 5.3
+
+No, the LATE is unlikely to be the same as the ATE. Indeed, compliers are likely to have much higher returns to education than the typical person because education is the pivotal factor affecting their future opportunities, whereas others who would have attended college regardless of proximity are likely from comparatively more privileged socioeconomic backgrounds that would have made education less uniquely influential on their futures. Thus, the LATE is likely much higher than the ATE.
